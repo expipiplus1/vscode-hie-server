@@ -1,8 +1,12 @@
-# Haskell for Visual Studio Code
+# Haskell for Visual Studio Code, Coc.nvim fork
 
 [![vsmarketplacebadge](https://vsmarketplacebadge.apphb.com/version/haskell.haskell.svg)](https://marketplace.visualstudio.com/items?itemName=haskell.haskell)
 
 This extension adds language support for [Haskell](https://haskell.org), powered by the [Haskell Language Server](https://github.com/haskell/haskell-language-server).
+
+This is a fork changing the minimum things required to get it working with
+coc.nvim. Some features such as automatic downloading of binaries have been
+removed. It is sometimes rebased on https://github.com/haskell/vscode-haskell
 
 ## Features
 
