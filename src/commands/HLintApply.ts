@@ -2,12 +2,9 @@
 import {
   commands,
   ExtensionContext,
-  window,
-  workspace,
-} from 'vscode';
-import {
   LanguageClient,
-} from 'vscode-languageclient';
+  workspace,
+} from 'coc.nvim';
 import { CommandNames } from './constants';
 
 export namespace HLintApply {
@@ -31,13 +28,7 @@ async function registerHieCommand(
   getArgs: () => Promise<any[]>
 ) {
   const editorCmd = commands.registerCommand(name, async () => {
-    const editor = window.activeTextEditor;
-    if (!editor) {
-      return;
-    }
-
-    const document = editor.document;
-
+    const { document } = await workspace.getCurrentState();
     const args = await getArgs();
     const cmd = {
       command,
@@ -74,11 +65,7 @@ async function registerHieFileCommand(
   context: ExtensionContext
 ) {
   registerHieCommand(clients, name, command, context, async () => {
-    const editor = window.activeTextEditor;
-    if (!editor) {
-      return [];
-    }
-    const document = editor.document;
-    return [document.uri];
+    const { document } = await workspace.getCurrentState();
+    return [document.uri.toString()];
   });
 }

@@ -1,16 +1,17 @@
 'use strict';
 import * as os from 'os';
 import * as path from 'path';
+import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   commands,
   ExtensionContext,
   OutputChannel,
-  TextDocument,
   Uri,
-  window,
   workspace,
+} from 'coc.nvim';
+import {
   WorkspaceFolder,
-} from 'vscode';
+} from 'vscode-languageserver-protocol';
 import {
   ExecutableOptions,
   LanguageClient,
@@ -18,12 +19,9 @@ import {
   RevealOutputChannelOn,
   ServerOptions,
   TransportKind,
-} from 'vscode-languageclient';
+} from 'coc.nvim';
 import { CommandNames } from './commands/constants';
 import { HLintApply } from './commands/HLintApply';
-import { ImportIdentifier } from './commands/importIdentifier';
-import { DocsBrowser } from './docsBrowser';
-import { downloadHaskellLanguageServer } from './hlsBinaries';
 import { executableExists } from './utils';
 
 // The current map of documents & folders to language servers.
@@ -61,18 +59,12 @@ export async function activate(context: ExtensionContext) {
   });
   context.subscriptions.push(restartCmd);
 
-  context.subscriptions.push(ImportIdentifier.registerCommand());
-
-  // Set up the documentation browser.
-  const docsDisposable = DocsBrowser.registerDocsBrowser();
-  context.subscriptions.push(docsDisposable);
-
   // Add the HLint commands
   HLintApply.registerCommands(clients, context);
 }
 
 function findManualExecutable(uri: Uri, folder?: WorkspaceFolder): string | null {
-  let exePath = workspace.getConfiguration('haskell', uri).serverExecutablePath;
+  let exePath = workspace.getConfiguration('haskell', uri.toString()).serverExecutablePath;
   if (exePath === '') {
     return null;
   }
@@ -80,7 +72,7 @@ function findManualExecutable(uri: Uri, folder?: WorkspaceFolder): string | null
   // Substitute path variables with their corresponding locations.
   exePath = exePath.replace('${HOME}', os.homedir).replace('${home}', os.homedir).replace(/^~/, os.homedir);
   if (folder) {
-    exePath = exePath.replace('${workspaceFolder}', folder.uri.path).replace('${workspaceRoot}', folder.uri.path);
+    exePath = exePath.replace('${workspaceFolder}', Uri.parse(folder.uri).path).replace('${workspaceRoot}', Uri.parse(folder.uri).path);
   }
 
   if (!executableExists(exePath)) {
@@ -91,7 +83,7 @@ function findManualExecutable(uri: Uri, folder?: WorkspaceFolder): string | null
 
 /** Searches the PATH for whatever is set in serverVariant */
 function findLocalServer(context: ExtensionContext, uri: Uri, folder?: WorkspaceFolder): string | null {
-  const serverVariant = workspace.getConfiguration('haskell', uri).languageServerVariant;
+  const serverVariant = workspace.getConfiguration('haskell', uri.toString()).languageServerVariant;
 
   // Set the executable, based on the settings.
   let exes: string[] = []; // should get set below
@@ -122,7 +114,7 @@ async function activeServer(context: ExtensionContext, document: TextDocument) {
     (document.languageId !== 'haskell' &&
       document.languageId !== 'cabal' &&
       document.languageId !== 'literate Haskell') ||
-    (document.uri.scheme !== 'file' && document.uri.scheme !== 'untitled')
+    (Uri.parse(document.uri).scheme !== 'file' && Uri.parse(document.uri).scheme !== 'untitled')
   ) {
     return;
   }
@@ -130,7 +122,7 @@ async function activeServer(context: ExtensionContext, document: TextDocument) {
   const uri = document.uri;
   const folder = workspace.getWorkspaceFolder(uri);
 
-  activateServerForFolder(context, uri, folder);
+  activateServerForFolder(context, Uri.parse(uri), folder ? folder : undefined);
 }
 
 async function activateServerForFolder(context: ExtensionContext, uri: Uri, folder?: WorkspaceFolder) {
@@ -143,35 +135,27 @@ async function activateServerForFolder(context: ExtensionContext, uri: Uri, fold
   // Set the key to null to prevent multiple servers being launched at once
   clients.set(clientsKey, null);
 
-  const logLevel = workspace.getConfiguration('haskell', uri).trace.server;
-  const logFile = workspace.getConfiguration('haskell', uri).logFile;
+  const logLevel = workspace.getConfiguration('haskell', uri.toString()).trace.server;
+  const logFile = workspace.getConfiguration('haskell', uri.toString()).logFile;
 
   let serverExecutable;
   try {
     // Try and find local installations first
     serverExecutable = findManualExecutable(uri, folder) ?? findLocalServer(context, uri, folder);
     if (serverExecutable === null) {
-      // If not, then try to download haskell-language-server binaries if it's selected
-      if (workspace.getConfiguration('haskell', uri).languageServerVariant === 'haskell-language-server') {
-        serverExecutable = await downloadHaskellLanguageServer(context, uri, folder);
-        if (!serverExecutable) {
-          return;
-        }
-      } else {
         showNotInstalledErrorMessage(uri);
         return;
-      }
     }
   } catch (e) {
     if (e instanceof Error) {
-      window.showErrorMessage(e.message);
+      workspace.showMessage(e.message, 'error');
     }
     return;
   }
 
   let args: string[] = ['--lsp'];
 
-  const serverVariant = workspace.getConfiguration('haskell', uri).languageServerVariant;
+  const serverVariant = workspace.getConfiguration('haskell', uri.toString()).languageServerVariant;
   // ghcide does not accept -d and -l params
   if (serverVariant !== 'ghcide') {
     if (logLevel === 'messages') {
@@ -199,13 +183,13 @@ async function activateServerForFolder(context: ExtensionContext, uri: Uri, fold
 
   // Set a unique name per workspace folder (useful for multi-root workspaces).
   const langName = 'Haskell' + (folder ? ` (${folder.name})` : '');
-  const outputChannel: OutputChannel = window.createOutputChannel(langName);
+  const outputChannel: OutputChannel = workspace.createOutputChannel(langName);
   outputChannel.appendLine('[client] run command: "' + serverExecutable + ' ' + args.join(' ') + '"');
   outputChannel.appendLine('[client] debug command: "' + serverExecutable + ' ' + args.join(' ') + '"');
 
   outputChannel.appendLine(`[client] server cwd: ${exeOptions.cwd}`);
 
-  const pat = folder ? `${folder.uri.fsPath}/**/*` : '**/*';
+  const pat = folder ? `${Uri.parse(folder.uri).fsPath}/**/*` : '**/*';
   const clientOptions: LanguageClientOptions = {
     // Use the document selector to only notify the LSP on files inside the folder
     // path for the specific workspace.
@@ -221,10 +205,7 @@ async function activateServerForFolder(context: ExtensionContext, uri: Uri, fold
     revealOutputChannelOn: RevealOutputChannelOn.Never,
     outputChannel,
     outputChannelName: langName,
-    middleware: {
-      provideHover: DocsBrowser.hoverLinksMiddlewareHook,
-      provideCompletionItem: DocsBrowser.completionLinksMiddlewareHook,
-    },
+    middleware: {},
     // Launch the server in the directory of the workspace folder.
     workspaceFolder: folder,
   };
@@ -254,7 +235,7 @@ export async function deactivate() {
 }
 
 function showNotInstalledErrorMessage(uri: Uri) {
-  const variant = workspace.getConfiguration('haskell', uri).languageServerVariant;
+  const variant = workspace.getConfiguration('haskell', uri.toString()).languageServerVariant;
   let projectUrl = '';
   switch (variant) {
     case 'haskell-ide-engine':
@@ -269,5 +250,5 @@ function showNotInstalledErrorMessage(uri: Uri) {
   }
   const notInstalledMsg: string =
     variant + ' executable missing, please make sure it is installed, see https://github.com' + projectUrl + '.';
-  window.showErrorMessage(notInstalledMsg);
+  workspace.showMessage(notInstalledMsg, 'error');
 }
