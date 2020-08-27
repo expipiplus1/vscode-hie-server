@@ -346,7 +346,7 @@
     "@types/request-promise-native": "^1.0.17",
     "@types/vscode": "^1.39.0",
     "@types/yauzl": "^2.9.1",
-    "coc.nvim": "^0.0.77",
+    "coc.nvim": "^0.0.79",
     "husky": "^4.2.5",
     "prettier": "^2.0.5",
     "pretty-quick": "^2.0.1",
